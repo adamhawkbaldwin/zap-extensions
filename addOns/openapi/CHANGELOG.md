@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
 ### Changed
+- Add support for detecting data-driven nodes from schema
+    - Handle multi-level path parameters and generate appropriate regex for DDNs
+    - Use default context for adding DDNs if not provided
 - Always use enum values when defined (Issue 6489).
 - Now using 2.10 logging infrastructure (Log4j 2.x).
 - Automation parameters are now in camelCase. This is a breaking change, and older automation configurations containing all-lowercase openapi parameters will stop working.

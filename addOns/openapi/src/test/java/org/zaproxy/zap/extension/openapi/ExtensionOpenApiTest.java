@@ -42,7 +42,9 @@ import org.junit.platform.commons.support.HierarchyTraversalMode;
 import org.junit.platform.commons.support.ReflectionSupport;
 import org.parosproxy.paros.control.Control;
 import org.parosproxy.paros.extension.ExtensionLoader;
+import org.parosproxy.paros.model.Model;
 import org.zaproxy.zap.extension.spider.ExtensionSpider;
+import org.zaproxy.zap.model.Context;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 
 public class ExtensionOpenApiTest extends AbstractServerTest {
@@ -167,6 +169,68 @@ public class ExtensionOpenApiTest extends AbstractServerTest {
 
         // then
         assertThat("Should fail to parse bad yaml", !errors.isEmpty());
+    }
+
+    @Test
+    public void shouldGenerateDataDrivenNodesOnContextNoUrl() {
+        // given
+        File file = getResourcePath("v3/VAmPI_defn.json").toFile();
+        Context ctx = getDefaultContext();
+
+        // when
+        classUnderTest.importOpenApiDefinition(file, "", false, ctx.getId());
+
+        // then
+        assertThat(
+                "Should have 2 data driven nodes in the context",
+                ctx.getDataDrivenNodes().size() == 2);
+    }
+
+    @Test
+    public void shouldGenerateDataDrivenNodesOnContext() {
+        // given
+        File file = getResourcePath("v3/VAmPI_defn.json").toFile();
+        Context ctx = getDefaultContext();
+        String targetUrl = "http://localhost:9000";
+
+        // when
+        classUnderTest.importOpenApiDefinition(file, targetUrl, false, ctx.getId());
+
+        // then
+        assertThat(
+                "Should have 2 data driven nodes in the context",
+                ctx.getDataDrivenNodes().size() == 2);
+        assertThat(
+                "Should start with targetUrl",
+                ctx.getDataDrivenNodes().get(0).getPattern().pattern().startsWith(targetUrl));
+    }
+
+    @Test
+    public void shouldGenerateDataDrivenNodesOnContextForMultiVarPath() {
+        // given
+        File file = getResourcePath("v3/MultiVarPath_defn.yaml").toFile();
+        Context ctx = getDefaultContext();
+        String targetUrl = "http://localhost:9000";
+
+        // when
+        classUnderTest.importOpenApiDefinition(file, targetUrl, false, ctx.getId());
+
+        // then
+        assertThat(
+                "Should have 2 data driven nodes in the context",
+                ctx.getDataDrivenNodes().size() == 2);
+        assertThat(
+                "Should start with targetUrl",
+                ctx.getDataDrivenNodes().get(0).getPattern().pattern().startsWith(targetUrl));
+    }
+
+    private Context getDefaultContext() {
+        String ctxName = "Default Content";
+        Context ctx = Model.getSingleton().getSession().getContext(ctxName);
+        if (ctx == null) {
+            ctx = Model.getSingleton().getSession().getNewContext(ctxName);
+        }
+        return ctx;
     }
 
     private static void setControlSingleton(Control control) throws Exception {
