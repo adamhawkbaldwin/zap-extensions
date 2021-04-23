@@ -74,7 +74,7 @@ class OpenApiAPIUnitTest extends AbstractServerTest {
         void shouldThrowIllegalParameterIfFailedToAccessTarget() {
             // Given
             JSONObject params = params(param("url", "http://not-reachable.example.com"));
-            given(extension.importOpenApiDefinition(any(URI.class), eq(""), eq(false)))
+            given(extension.importOpenApiDefinition(any(URI.class), eq(""), eq(false), eq(-1)))
                     .willReturn(null);
             // When / Then
             ApiException exception =

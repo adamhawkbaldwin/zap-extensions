@@ -39,17 +39,22 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.parosproxy.paros.Constant;
+import org.parosproxy.paros.model.Model;
 import org.zaproxy.zap.extension.openapi.converter.Converter;
 import org.zaproxy.zap.extension.openapi.generators.Generators;
 import org.zaproxy.zap.extension.openapi.network.RequestModel;
+import org.zaproxy.zap.model.Context;
+import org.zaproxy.zap.model.StructuralNodeModifier;
 import org.zaproxy.zap.model.ValueGenerator;
 
 public class SwaggerConverter implements Converter {
@@ -58,6 +63,7 @@ public class SwaggerConverter implements Converter {
     private static final String BASE_KEY_I18N = "openapi.swaggerconverter.";
 
     private static Logger LOG = LogManager.getLogger(SwaggerConverter.class);
+    private static Pattern PATH_PART_PATTERN = Pattern.compile("\\{.*}");
     private final UriBuilder targetUriBuilder;
     private final UriBuilder definitionUriBuilder;
     private String defn;
@@ -393,12 +399,10 @@ public class SwaggerConverter implements Converter {
         ParseOptions parseOptions = new ParseOptions();
         parseOptions.setResolve(true);
         parseOptions.setResolveFully(true);
-
-        List<String> errors = new ArrayList<>();
+        SwaggerParseResult swaggerParseResult = new SwaggerParseResult();
+        ArrayList<String> errors = new ArrayList<>();
         for (SwaggerParserExtension ex : OpenAPIV3Parser.getExtensions()) {
-            errors.clear();
-            SwaggerParseResult swaggerParseResult =
-                    ex.readLocation(file.getAbsolutePath(), null, parseOptions);
+            swaggerParseResult = ex.readLocation(file.getAbsolutePath(), null, parseOptions);
             OpenAPI openAPI = swaggerParseResult.getOpenAPI();
             if (openAPI != null) {
                 return swaggerParseResult;
@@ -406,9 +410,115 @@ public class SwaggerConverter implements Converter {
                 errors.addAll(swaggerParseResult.getMessages());
             }
         }
-
-        SwaggerParseResult swaggerParseResult = new SwaggerParseResult();
         swaggerParseResult.setMessages(errors);
         return swaggerParseResult;
+    }
+
+    public List<StructuralNodeModifier> getStructuralNodeModifiers() {
+        List<StructuralNodeModifier> structuralNodeModifiers = new ArrayList<>();
+        try {
+            OpenAPI openAPI = getOpenAPI();
+            String targetUrl;
+            if (targetUriBuilder.isEmpty()) {
+                targetUrl = null;
+            } else {
+                targetUrl = targetUriBuilder.build();
+            }
+
+            Set<String> ddnRegexStrings = new HashSet<>();
+            // check for DDN on each key (path) in the spec
+            for (Map.Entry<String, PathItem> entry : openAPI.getPaths().entrySet()) {
+                String key = entry.getKey();
+                try {
+                    List<String> params = getPathParameters(key);
+                    String ddnPattern = createStructuralNodeRegexString(params, targetUrl, key);
+                    if (ddnPattern != null) {
+                        ddnRegexStrings.add(ddnPattern);
+                    }
+                } catch (Exception e) {
+                    LOG.error("error evaluating DDN for key: {}", key, e);
+                }
+            }
+
+            int ddnCnt = 0;
+            for (String regexString : ddnRegexStrings) {
+                try {
+                    Pattern pattern = Pattern.compile(regexString);
+                    StructuralNodeModifier structuralNodeModifier =
+                            createStructuralNode(pattern, "DDN" + ddnCnt++);
+                    structuralNodeModifiers.add(structuralNodeModifier);
+                } catch (Exception e) {
+                    LOG.error("error adding structural node", e);
+                }
+            }
+
+        } catch (IllegalStateException | SwaggerException e) {
+            LOG.error("could not create structural nodes: {}", e.getMessage());
+        }
+        return structuralNodeModifiers;
+    }
+
+    public List<String> setStructuralNodeModifiers(int contextId) {
+        if (contextId >= 0) {
+            try {
+                List<StructuralNodeModifier> structuralNodeModifiers = getStructuralNodeModifiers();
+                Context ctx = Model.getSingleton().getSession().getContext(contextId);
+                ctx.setDataDrivenNodes(structuralNodeModifiers);
+            } catch (Exception e) {
+                LOG.error(
+                        "Error setting data driven nodes from spec for contextId: {}",
+                        contextId,
+                        e);
+                errors.add(e.getMessage());
+            }
+        }
+        return errors;
+    }
+
+    private static StructuralNodeModifier createStructuralNode(Pattern pattern, String ddnName) {
+        return new StructuralNodeModifier(
+                StructuralNodeModifier.Type.DataDrivenNode, pattern, ddnName);
+    }
+
+    private static String createStructuralNodeRegexString(
+            List<String> params, String finalTargetUrl, String key) {
+        if (params.isEmpty()) return null;
+        else {
+            // get last param as the DDN for the key
+            String lastParam = params.get(params.size() - 1);
+
+            StringBuilder sb = new StringBuilder();
+            if (finalTargetUrl != null) {
+                sb.append(finalTargetUrl);
+            }
+
+            sb.append('(');
+            String pathTill = key.split(lastParam)[0].replace("{", "");
+            // replace other params with .+? regex in the first path grouping
+            for (String param : params) {
+                if (!param.equals(lastParam)) {
+                    pathTill = pathTill.replace(param, ".+?");
+                }
+            }
+            sb.append(pathTill);
+            // add trailing matcher for this DDN
+            sb.append(")(.+?)(/.*)");
+            return removeBrackets(sb.toString());
+        }
+    }
+
+    private static List<String> getPathParameters(String key) {
+        String[] pathParts = key.split("/");
+        List<String> params = new ArrayList<>();
+        for (String part : pathParts) {
+            if (PATH_PART_PATTERN.matcher(part).matches()) {
+                params.add(removeBrackets(part));
+            }
+        }
+        return params;
+    }
+
+    private static String removeBrackets(String str) {
+        return str.replace("{", "").replace("}", "");
     }
 }

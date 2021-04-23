@@ -20,50 +20,62 @@
 package org.zaproxy.zap.extension.openapi;
 
 import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.CoreMatchers.nullValue;
+import static org.hamcrest.CoreMatchers.startsWith;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
 
 import fi.iki.elonen.NanoHTTPD;
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.charset.Charset;
 import java.util.List;
+import java.util.Locale;
 import org.apache.commons.httpclient.URI;
 import org.apache.commons.httpclient.URIException;
 import org.apache.commons.io.FileUtils;
+import org.hamcrest.MatcherAssert;
+import org.hamcrest.collection.IsEmptyCollection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.platform.commons.support.HierarchyTraversalMode;
-import org.junit.platform.commons.support.ReflectionSupport;
+import org.parosproxy.paros.Constant;
 import org.parosproxy.paros.control.Control;
 import org.parosproxy.paros.extension.ExtensionLoader;
+import org.parosproxy.paros.model.Model;
 import org.zaproxy.zap.extension.spider.ExtensionSpider;
+import org.zaproxy.zap.model.Context;
 import org.zaproxy.zap.testutils.NanoServerHandler;
+import org.zaproxy.zap.utils.I18N;
+import org.zaproxy.zap.utils.ZapXmlConfiguration;
 
-public class ExtensionOpenApiTest extends AbstractServerTest {
+class ExtensionOpenApiTest extends AbstractServerTest {
 
-    private ExtensionOpenApi classUnderTest;
+    private ExtensionOpenApi extensionOpenApi;
 
     @BeforeEach
-    public void setup() throws Exception {
-        classUnderTest = new ExtensionOpenApi();
+    void setupExtension() throws Exception {
+        Constant.messages = new I18N(Locale.ENGLISH);
+        Model model = mock(Model.class, withSettings().defaultAnswer(CALLS_REAL_METHODS));
+        Model.setSingletonForTesting(model);
 
-        Control control = mock(Control.class, withSettings().lenient());
-        setControlSingleton(control);
+        extensionOpenApi = new ExtensionOpenApi();
 
         ExtensionLoader extensionLoader = mock(ExtensionLoader.class, withSettings().lenient());
-        when(control.getExtensionLoader()).thenReturn(extensionLoader);
+
+        Control.initSingletonForTesting(Model.getSingleton(), extensionLoader);
+        Model.getSingleton().getOptionsParam().load(new ZapXmlConfiguration());
 
         given(extensionLoader.getExtension(ExtensionSpider.class))
                 .willReturn(mock(ExtensionSpider.class));
     }
 
     @Test
-    public void shouldImportFile() throws IOException {
+    void shouldImportFile() throws IOException {
         // given
         String test = "/PetStoreJson/";
         String defnName = "defn.json";
@@ -76,14 +88,14 @@ public class ExtensionOpenApiTest extends AbstractServerTest {
         FileUtils.write(tmpFile, fileContents, Charset.defaultCharset());
 
         // when
-        List<String> errors = classUnderTest.importOpenApiDefinition(tmpFile, false);
+        List<String> errors = extensionOpenApi.importOpenApiDefinition(tmpFile, false);
 
         // then
-        assertThat("Should parse OK: " + errors, errors.isEmpty());
+        MatcherAssert.assertThat(errors, IsEmptyCollection.empty());
     }
 
     @Test
-    public void shouldImportMultiFileV3() {
+    void shouldImportMultiFileV3() {
         // given
         String test = "/PetStoreJson/";
         String defnName = "defn.json";
@@ -92,14 +104,14 @@ public class ExtensionOpenApiTest extends AbstractServerTest {
 
         // when
         List<String> errors =
-                classUnderTest.importOpenApiDefinition(getResourcePath(file).toFile(), false);
+                extensionOpenApi.importOpenApiDefinition(getResourcePath(file).toFile(), false);
 
         // then
-        assertThat("Should parse OK: " + errors, errors.isEmpty());
+        assertThat(errors, IsEmptyCollection.empty());
     }
 
     @Test
-    public void shouldImportMultiFileV2() {
+    void shouldImportMultiFileV2() {
         // given
         String test = "/PetStoreJson/";
         String defnName = "defn.json";
@@ -108,14 +120,14 @@ public class ExtensionOpenApiTest extends AbstractServerTest {
 
         // when
         List<String> errors =
-                classUnderTest.importOpenApiDefinition(getResourcePath(file).toFile(), false);
+                extensionOpenApi.importOpenApiDefinition(getResourcePath(file).toFile(), false);
 
         // then
-        assertThat("Should parse OK: " + errors, errors.isEmpty());
+        assertThat(errors, IsEmptyCollection.empty());
     }
 
     @Test
-    public void shouldFailNonOpenApiURL() throws URIException {
+    void shouldFailNonOpenApiURL() throws URIException {
 
         // given
         String test = "/PetStoreJson/";
@@ -124,45 +136,89 @@ public class ExtensionOpenApiTest extends AbstractServerTest {
         URI uri = new URI("http://localhost:" + this.nano.getListeningPort() + "/fake", false);
 
         // when
-        List<String> errors = classUnderTest.importOpenApiDefinition(uri, null, false);
+        List<String> errors = extensionOpenApi.importOpenApiDefinition(uri, null, false);
 
         // then
-        assertThat("Should fail fake URL", errors != null && !errors.isEmpty());
+        assertThat(errors, not(nullValue()));
+        assertThat(errors, not(IsEmptyCollection.empty()));
     }
 
     @Test
-    public void shouldFailBadJson() {
+    void shouldFailBadJson() {
         // given
         File file = getResourcePath("bad-json.json").toFile();
 
         // when
-        List<String> errors = classUnderTest.importOpenApiDefinition(file, false);
+        List<String> errors = extensionOpenApi.importOpenApiDefinition(file, false);
 
         // then
-        assertThat("Should fail to parse bad json", !errors.isEmpty());
+        assertThat(errors, not(IsEmptyCollection.empty()));
     }
 
     @Test
-    public void shouldFailBadYaml() {
+    void shouldFailBadYaml() {
         // given
         File file = getResourcePath("bad-yaml.yml").toFile();
 
         // when
-        List<String> errors = classUnderTest.importOpenApiDefinition(file, false);
+        List<String> errors = extensionOpenApi.importOpenApiDefinition(file, false);
 
         // then
-        assertThat("Should fail to parse bad yaml", !errors.isEmpty());
+        assertThat(errors, not(IsEmptyCollection.empty()));
     }
 
-    private static void setControlSingleton(Control control) throws Exception {
-        Field field =
-                ReflectionSupport.findFields(
-                                Control.class,
-                                f -> "control".equals(f.getName()),
-                                HierarchyTraversalMode.TOP_DOWN)
-                        .get(0);
-        field.setAccessible(true);
-        field.set(Control.class, control);
+    @Test
+    void shouldGenerateDataDrivenNodesOnContextNoUrl() {
+        // given
+        File file = getResourcePath("v3/PetStore_defn.json").toFile();
+        Context ctx = getDefaultContext();
+
+        // when
+        extensionOpenApi.importOpenApiDefinition(file, "", false, ctx.getId());
+
+        // then
+        assertThat(ctx.getDataDrivenNodes().size(), is(3));
+    }
+
+    @Test
+    void shouldGenerateDataDrivenNodesOnContext() {
+        // given
+        File file = getResourcePath("v3/PetStore_defn.json").toFile();
+        Context ctx = getDefaultContext();
+        String targetUrl = "http://localhost:9000";
+
+        // when
+        extensionOpenApi.importOpenApiDefinition(file, targetUrl, false, ctx.getId());
+
+        // then
+        assertThat(ctx.getDataDrivenNodes().size(), is(3));
+
+        assertThat(ctx.getDataDrivenNodes().get(0).getPattern().pattern(), startsWith(targetUrl));
+    }
+
+    @Test
+    void shouldGenerateDataDrivenNodesOnContextForMultiVarPath() {
+        // given
+        File file = getResourcePath("v3/MultiVarPath_defn.yaml").toFile();
+        Context ctx = getDefaultContext();
+        String targetUrl = "http://localhost:9000";
+
+        // when
+        extensionOpenApi.importOpenApiDefinition(file, targetUrl, false, ctx.getId());
+
+        // then
+        assertThat(ctx.getDataDrivenNodes().size(), is(2));
+
+        assertThat(ctx.getDataDrivenNodes().get(0).getPattern().pattern(), startsWith(targetUrl));
+    }
+
+    private Context getDefaultContext() {
+        String ctxName = "Default Content";
+        Context ctx = Model.getSingleton().getSession().getContext(ctxName);
+        if (ctx == null) {
+            ctx = Model.getSingleton().getSession().getNewContext(ctxName);
+        }
+        return ctx;
     }
 
     private class DefnServerHandler extends NanoServerHandler {
@@ -171,11 +227,11 @@ public class ExtensionOpenApiTest extends AbstractServerTest {
         private final String defnFileName;
         private final String port;
 
-        public DefnServerHandler(String name, String defnName, String defnFileName) {
+        DefnServerHandler(String name, String defnName, String defnFileName) {
             this(name, defnName, defnFileName, nano.getListeningPort());
         }
 
-        public DefnServerHandler(String name, String defnName, String defnFileName, int port) {
+        DefnServerHandler(String name, String defnName, String defnFileName, int port) {
             super(name);
             this.defnName = defnName;
             this.defnFileName = defnFileName;

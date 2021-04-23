@@ -194,6 +194,30 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
 
     public OpenApiResults importOpenApiDefinitionV2(
             final URI uri, final String targetUrl, boolean initViaUi) {
+        return importOpenApiDefinitionV2(uri, targetUrl, initViaUi, -1);
+    }
+
+    /**
+     * Imports the API definition from a URI.
+     *
+     * @param uri the URI locating the API definition.
+     * @param targetUrl the URL to override the URL defined in the API, might be {@code null}.
+     * @param initViaUi {@code true} if the import is being done through the GUI, {@code false}
+     *     otherwise.
+     * @param contextId The contextId to add structural modifiers (data driven nodes) from openapi
+     *     spec path parameters {@code null}
+     * @return the list of errors, if any. Returns {@code null} if the import is being done through
+     *     the GUI, or, if not done through the GUI the target was not accessed (caused by an {@code
+     *     IOException}).
+     * @throws InvalidUrlException if the target URL is not valid.
+     */
+    public List<String> importOpenApiDefinition(
+            final URI uri, final String targetUrl, boolean initViaUi, int contextId) {
+        return this.importOpenApiDefinitionV2(uri, targetUrl, initViaUi, contextId).getErrors();
+    }
+
+    public OpenApiResults importOpenApiDefinitionV2(
+            final URI uri, final String targetUrl, boolean initViaUi, int contextId) {
         OpenApiResults results = new OpenApiResults();
         Requestor requestor = new Requestor(HttpSender.MANUAL_REQUEST_INITIATOR);
         requestor.addListener(new HistoryPersister(results));
@@ -208,7 +232,8 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
                             targetUrl,
                             uri.getScheme() + "://" + uri.getAuthority() + path,
                             initViaUi,
-                            requestor));
+                            requestor,
+                            contextId));
             return results;
         } catch (IOException e) {
             if (initViaUi) {
@@ -250,7 +275,29 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
 
     public OpenApiResults importOpenApiDefinitionV2(
             final File file, final String targetUrl, boolean initViaUi) {
+        return importOpenApiDefinitionV2(file, targetUrl, initViaUi, -1);
+    }
 
+    /**
+     * Imports the API definition from a file.
+     *
+     * @param file the file with the API definition.
+     * @param targetUrl the URL to override the URL defined in the API, might be {@code null}.
+     * @param initViaUi {@code true} if the import is being done through the GUI, {@code false}
+     *     otherwise.
+     * @param contextId The contextId to add structural modifiers (data driven nodes) from openapi
+     *     spec path parameters {@code null}
+     * @return the list of errors, if any. Returns {@code null} if the import is being done through
+     *     the GUI.
+     * @throws InvalidUrlException if the target URL is not valid.
+     */
+    public List<String> importOpenApiDefinition(
+            final File file, final String targetUrl, boolean initViaUi, int contextId) {
+        return this.importOpenApiDefinitionV2(file, targetUrl, initViaUi, contextId).getErrors();
+    }
+
+    public OpenApiResults importOpenApiDefinitionV2(
+            final File file, final String targetUrl, boolean initViaUi, int contextId) {
         try {
             OpenApiResults results = new OpenApiResults();
             Requestor requestor = new Requestor(HttpSender.MANUAL_REQUEST_INITIATOR);
@@ -267,7 +314,7 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
                 results.setErrors(swaggerParseResult.getMessages());
             } else {
                 importOpenApiDefinition(
-                        Json.pretty(openApi), targetUrl, null, initViaUi, requestor);
+                        Json.pretty(openApi), targetUrl, null, initViaUi, requestor, contextId);
             }
             return results;
         } catch (IOException e) {
@@ -285,10 +332,12 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
             final String targetUrl,
             final String definitionUrl,
             boolean initViaUi,
-            final Requestor requestor) {
-        final List<String> errors = new ArrayList<>();
+            final Requestor requestor,
+            int contextId) {
         SwaggerConverter converter =
                 new SwaggerConverter(targetUrl, definitionUrl, defn, getValueGenerator());
+        final List<String> errors =
+                new ArrayList<>(converter.setStructuralNodeModifiers(contextId));
         Thread t =
                 new Thread(THREAD_PREFIX + threadId++) {
 
@@ -350,7 +399,6 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
                 t.join();
             } catch (InterruptedException e) {
                 LOG.debug(e.getMessage(), e);
-                errors.add(Constant.messages.getString("openapi.parse.error", e));
             }
             return errors;
         }
