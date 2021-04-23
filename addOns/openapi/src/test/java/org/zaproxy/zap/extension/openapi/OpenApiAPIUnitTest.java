@@ -29,9 +29,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
-import java.io.File;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.stream.Collectors;
 import net.sf.json.JSONObject;
@@ -40,25 +38,24 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.zaproxy.zap.extension.api.ApiException;
-import org.zaproxy.zap.extension.api.ApiResponse;
 import org.zaproxy.zap.model.DefaultNameValuePair;
 import org.zaproxy.zap.model.NameValuePair;
 
 /** Unit test for {@link OpenApiAPI}. */
-public class OpenApiAPIUnitTest extends AbstractServerTest {
+class OpenApiAPIUnitTest extends AbstractServerTest {
 
     private ExtensionOpenApi extension;
 
     private OpenApiAPI openApiAPI;
 
     @BeforeEach
-    public void prepare() {
+    void prepare() {
         extension = mock(ExtensionOpenApi.class);
         openApiAPI = new OpenApiAPI(extension);
     }
 
     @Test
-    public void shouldThrowBadActionIfActionUnknown() {
+    void shouldThrowBadActionIfActionUnknown() {
         // Given
         String actionName = "_NotKnownAction_";
         // When / Then
@@ -71,116 +68,21 @@ public class OpenApiAPIUnitTest extends AbstractServerTest {
     @Nested
     class ApiImportUrl {
 
-        @Test
-        public void shouldThrowIllegalParameterIfErrorDetected() {
-            // Given
-            String fakeError = "fakeError";
-            JSONObject params =
-                    params(param(OpenApiAPI.PARAM_URL, "http://not-reachable.example.com"));
-            given(extension.importOpenApiDefinition(any(URI.class), eq(""), eq(false)))
-                    .willReturn(Collections.singletonList(fakeError));
-            // When / Then
-            ApiException exception =
-                    assertThrows(
-                            ApiException.class,
-                            () -> openApiAPI.handleApiAction(OpenApiAPI.ACTION_IMPORT_URL, params));
-            assertThat(exception.getType(), is(equalTo(ApiException.Type.ILLEGAL_PARAMETER)));
-            assertThat(exception.toString(), containsString(fakeError));
-        }
+        private static final String ACTION = "importUrl";
 
         @Test
-        public void shouldImportWithNoErrorDetected() throws ApiException {
+        void shouldThrowIllegalParameterIfFailedToAccessTarget() {
             // Given
-            JSONObject params =
-                    params(param(OpenApiAPI.PARAM_URL, "http://not-reachable.example.com"));
+            JSONObject params = params(param("url", "http://not-reachable.example.com"));
             given(extension.importOpenApiDefinition(any(URI.class), eq(""), eq(false)))
                     .willReturn(null);
-            // When
-            ApiResponse apiResponse =
-                    openApiAPI.handleApiAction(OpenApiAPI.ACTION_IMPORT_URL, params);
-
-            // Then
-            assertThat(
-                    "Import URL Action returned",
-                    apiResponse.getName().equals(OpenApiAPI.ACTION_IMPORT_URL));
-        }
-    }
-
-    @Nested
-    class ApiImportFile {
-        @Test
-        public void shouldThrowFileDoesntExist() {
-            // Given
-            String fileName = "non-existent.json";
-            JSONObject params = params(param(OpenApiAPI.PARAM_FILE, fileName));
-
             // When / Then
             ApiException exception =
                     assertThrows(
-                            ApiException.class,
-                            () ->
-                                    openApiAPI.handleApiAction(
-                                            OpenApiAPI.ACTION_IMPORT_FILE, params));
-            assertThat(exception.getType(), is(equalTo(ApiException.Type.DOES_NOT_EXIST)));
-            assertThat(exception.toString(), containsString(fileName));
-        }
-
-        @Test
-        public void shouldThrowIllegalParamIfNotAFile() {
-            // Given
-            String directory = "v1";
-            JSONObject params = params(param(OpenApiAPI.PARAM_FILE, getResourceAsFile(directory)));
-
-            // When / Then
-            ApiException exception =
-                    assertThrows(
-                            ApiException.class,
-                            () ->
-                                    openApiAPI.handleApiAction(
-                                            OpenApiAPI.ACTION_IMPORT_FILE, params));
+                            ApiException.class, () -> openApiAPI.handleApiAction(ACTION, params));
             assertThat(exception.getType(), is(equalTo(ApiException.Type.ILLEGAL_PARAMETER)));
-            assertThat(exception.toString(), containsString(directory));
+            assertThat(exception.toString(), containsString("Failed to access the target."));
         }
-
-        @Test
-        public void shouldThrowIllegalParameterIfErrorDetected() {
-            // Given
-            String parseError = "parseError";
-            JSONObject params =
-                    params(param(OpenApiAPI.PARAM_FILE, getResourceAsFile("bad-json.json")));
-            given(extension.importOpenApiDefinition(any(File.class), eq(""), eq(false)))
-                    .willReturn(Collections.singletonList(parseError));
-            // When / Then
-            ApiException exception =
-                    assertThrows(
-                            ApiException.class,
-                            () ->
-                                    openApiAPI.handleApiAction(
-                                            OpenApiAPI.ACTION_IMPORT_FILE, params));
-            assertThat(exception.getType(), is(equalTo(ApiException.Type.ILLEGAL_PARAMETER)));
-            assertThat(exception.toString(), containsString(parseError));
-        }
-
-        @Test
-        public void shouldImportWithNoErrorDetected() throws ApiException {
-            // Given
-            JSONObject params =
-                    params(param(OpenApiAPI.PARAM_FILE, getResourceAsFile("bad-json.json")));
-            given(extension.importOpenApiDefinition(any(File.class), eq(""), eq(false)))
-                    .willReturn(null);
-            // When
-            ApiResponse apiResponse =
-                    openApiAPI.handleApiAction(OpenApiAPI.ACTION_IMPORT_FILE, params);
-
-            // Then
-            assertThat(
-                    "Import File Action Returned",
-                    apiResponse.getName().equals(OpenApiAPI.ACTION_IMPORT_FILE));
-        }
-    }
-
-    private String getResourceAsFile(String file) {
-        return getClass().getResource(file).getFile();
     }
 
     private static JSONObject params(NameValuePair... params) {
@@ -189,7 +91,7 @@ public class OpenApiAPIUnitTest extends AbstractServerTest {
         }
 
         return JSONObject.fromObject(
-                Arrays.stream(params)
+                Arrays.asList(params).stream()
                         .collect(
                                 Collectors.toMap(NameValuePair::getName, NameValuePair::getValue)));
     }
