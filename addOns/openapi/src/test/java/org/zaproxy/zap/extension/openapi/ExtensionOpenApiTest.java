@@ -19,14 +19,6 @@
  */
 package org.zaproxy.zap.extension.openapi;
 
-import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.withSettings;
-
 import fi.iki.elonen.NanoHTTPD;
 import java.io.File;
 import java.io.IOException;
@@ -37,6 +29,7 @@ import org.apache.commons.httpclient.URI;
 import org.apache.commons.httpclient.URIException;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.platform.commons.support.HierarchyTraversalMode;
 import org.junit.platform.commons.support.ReflectionSupport;
@@ -46,6 +39,12 @@ import org.parosproxy.paros.model.Model;
 import org.zaproxy.zap.extension.spider.ExtensionSpider;
 import org.zaproxy.zap.model.Context;
 import org.zaproxy.zap.testutils.NanoServerHandler;
+import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 public class ExtensionOpenApiTest extends AbstractServerTest {
 
@@ -93,9 +92,12 @@ public class ExtensionOpenApiTest extends AbstractServerTest {
         String file = "v3/multi-file/api.yaml";
         this.nano.addHandler(new DefnServerHandler(test, defnName, file));
 
-        assertDoesNotThrow(() -> {
-            classUnderTest.importOpenApiDefinition(getResourcePath(file).toFile(), false);
-        });
+        // when
+        List<String> errors =
+                classUnderTest.importOpenApiDefinition(getResourcePath(file).toFile(), false);
+
+        // then
+        assertThat("Should parse OK: " + errors, errors.isEmpty());
     }
 
     @Test
@@ -106,19 +108,76 @@ public class ExtensionOpenApiTest extends AbstractServerTest {
         String file = "v2/multi-file/api.yaml";
         this.nano.addHandler(new DefnServerHandler(test, defnName, file));
 
-        assertDoesNotThrow(() -> {
-            classUnderTest.importOpenApiDefinition(getResourcePath(file).toFile(), false);
-        });
+        // when
+        List<String> errors =
+                classUnderTest.importOpenApiDefinition(getResourcePath(file).toFile(), false);
+
+        // then
+        assertThat("Should parse OK: " + errors, errors.isEmpty());
     }
 
     @Test
-    public void shouldGenerateDataDrivenNodesOnContextNoUrl() throws URIException {
+    public void shouldFailNonOpenApiURL() throws URIException {
+
+        // given
+        String test = "/PetStoreJson/";
+        String defnName = "defn.json";
+        this.nano.addHandler(new DefnServerHandler(test, defnName, "PetStore_defn.json"));
+        URI uri = new URI("http://localhost:" + this.nano.getListeningPort() + "/fake", false);
+
+        // when
+        List<String> errors = classUnderTest.importOpenApiDefinition(uri, null, false);
+
+        // then
+        assertThat("Should fail fake URL", errors != null && !errors.isEmpty());
+    }
+
+    @Test
+    @Disabled
+    public void shouldFailNonExistentUrl() throws URIException {
+
+        // given
+        URI uri = new URI("http://foo", false);
+
+        // when
+        List<String> errors = classUnderTest.importOpenApiDefinition(uri, null, false);
+
+        // then
+        assertThat("Should fail fake URL", errors != null && !errors.isEmpty());
+    }
+
+    @Test
+    public void shouldFailBadJson() {
+        // given
+        File file = getResourcePath("bad-json.json").toFile();
+
+        // when
+        List<String> errors = classUnderTest.importOpenApiDefinition(file, false);
+
+        // then
+        assertThat("Should fail to parse bad json", !errors.isEmpty());
+    }
+
+    @Test
+    public void shouldFailBadYaml() {
+        // given
+        File file = getResourcePath("bad-yaml.yml").toFile();
+
+        // when
+        List<String> errors = classUnderTest.importOpenApiDefinition(file, false);
+
+        // then
+        assertThat("Should fail to parse bad yaml", !errors.isEmpty());
+    }
+
+    @Test
+    public void shouldGenerateDataDrivenNodesOnContextNoUrl() {
         // given
         File file = getResourcePath("v3/VAmPI_defn.json").toFile();
         Context ctx = getDefaultContext();
 
         // when
-        classUnderTest.importOpenApiDefinition(new URI(file.toString(), false), ctx.getId());
+        classUnderTest.importOpenApiDefinition(file, "", false, ctx.getId());
 
         // then
         assertThat(

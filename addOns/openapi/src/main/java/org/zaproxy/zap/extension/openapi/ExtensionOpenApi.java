@@ -19,12 +19,14 @@
  */
 package org.zaproxy.zap.extension.openapi;
 
+import io.swagger.v3.core.util.Json;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.commons.httpclient.URI;
-import org.apache.commons.io.FileUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.parosproxy.paros.CommandLine;
@@ -181,14 +183,14 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
     public List<String> importOpenApiDefinition(
             final URI uri, final String targetUrl, boolean initViaUi, int contextId) {
         OpenApiResults results =
-                this.importOpenApiDefinitionV2(uri, targetUrl, initViaUi, contextId);
+                this.importOpenApiDefinitionResults(uri, targetUrl, initViaUi, contextId);
         if (results != null) {
             return results.getErrors();
         }
         return null;
     }
 
-    public OpenApiResults importOpenApiDefinitionV2(
+    public OpenApiResults importOpenApiDefinitionResults(
             final URI uri, final String targetUrl, boolean initViaUi, int contextId) {
         OpenApiResults results = new OpenApiResults();
         Requestor requestor = new Requestor(HttpSender.MANUAL_REQUEST_INITIATOR);
@@ -241,11 +243,16 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
     public List<String> importOpenApiDefinition(
             final File file, String targetUrl, boolean initViaUi, int contextId) {
         OpenApiResults results =
-                this.importOpenApiDefinitionV2(file, targetUrl, initViaUi, contextId);
+                this.importOpenApiDefinitionResults(file, targetUrl, initViaUi, contextId);
         if (results != null) {
             return results.getErrors();
         }
         return null;
+    }
+
+    public List<String> importOpenApiDefinition(
+            final File file, String targetUrl, boolean initViaUi) {
+        return this.importOpenApiDefinition(file, targetUrl, initViaUi, -1);
     }
 
     public List<String> importOpenApiDefinition(final File file, boolean initViaUi) {
@@ -265,20 +272,26 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
      *     the GUI.
      * @throws InvalidUrlException if the target URL is not valid.
      */
-    public OpenApiResults importOpenApiDefinitionV2(
+    public OpenApiResults importOpenApiDefinitionResults(
             final File file, final String targetUrl, boolean initViaUi, int contextId) {
         try {
             OpenApiResults results = new OpenApiResults();
             Requestor requestor = new Requestor(HttpSender.MANUAL_REQUEST_INITIATOR);
             requestor.addListener(new HistoryPersister(results));
-            results.setErrors(
-                    importOpenApiDefinition(
-                            FileUtils.readFileToString(file, "UTF-8"),
-                            targetUrl,
-                            null,
-                            initViaUi,
-                            requestor,
-                            contextId));
+
+            if (!file.exists()) {
+                throw new IOException(file.getAbsolutePath() + " does not exist.");
+            }
+
+            SwaggerParseResult swaggerParseResult = SwaggerConverter.parse(file);
+            OpenAPI openApi = swaggerParseResult.getOpenAPI();
+
+            if (openApi == null) {
+                results.setErrors(swaggerParseResult.getMessages());
+            } else {
+                importOpenApiDefinition(
+                        Json.pretty(openApi), targetUrl, null, initViaUi, requestor, contextId);
+            }
             return results;
         } catch (IOException e) {
             if (initViaUi) {
@@ -363,7 +376,7 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
                                                 baseMessage
                                                         + "\n\n"
                                                         + Constant.messages.getString(
-                                                                "openapi.parse.trailer"));
+                                                        "openapi.parse.trailer"));
                             }
                             errors.add(Constant.messages.getString("openapi.parse.error", e));
                             logErrors(errors, initViaUi);
@@ -372,6 +385,7 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
                     }
                 };
         t.start();
+
         if (!initViaUi) {
             try {
                 t.join();

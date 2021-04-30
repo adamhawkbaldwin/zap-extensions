@@ -28,6 +28,7 @@ import org.zaproxy.zap.extension.api.ApiAction;
 import org.zaproxy.zap.extension.api.ApiException;
 import org.zaproxy.zap.extension.api.ApiImplementor;
 import org.zaproxy.zap.extension.api.ApiResponse;
+import org.zaproxy.zap.extension.api.ApiResponseElement;
 import org.zaproxy.zap.extension.api.ApiResponseList;
 import org.zaproxy.zap.extension.openapi.converter.swagger.InvalidUrlException;
 import org.zaproxy.zap.utils.ApiUtils;
@@ -43,7 +44,7 @@ public class OpenApiAPI extends ApiImplementor {
     static final String PARAM_CONTEXT_ID = "contextId";
 
     private static final String PARAM_HOST_OVERRIDE = "hostOverride";
-    private ExtensionOpenApi extension;
+    private ExtensionOpenApi extension = null;
 
     /** Provided only for API client generator usage. */
     public OpenApiAPI() {
@@ -72,7 +73,14 @@ public class OpenApiAPI extends ApiImplementor {
     @Override
     public ApiResponse handleApiAction(String name, JSONObject params) throws ApiException {
         if (ACTION_IMPORT_FILE.equals(name)) {
-            File file = handleFile(params);
+            File file = new File(params.getString(PARAM_FILE));
+            if (!file.exists() || !file.canRead()) {
+                throw new ApiException(ApiException.Type.DOES_NOT_EXIST, file.getAbsolutePath());
+            }
+
+            if (!file.isFile()) {
+                throw new ApiException(ApiException.Type.ILLEGAL_PARAMETER, PARAM_FILE);
+            }
             List<String> errors;
             String target = params.optString(PARAM_TARGET, "");
             try {
@@ -87,10 +95,20 @@ public class OpenApiAPI extends ApiImplementor {
                 throw new ApiException(ApiException.Type.ILLEGAL_PARAMETER, PARAM_TARGET);
             }
 
-            checkErrors(errors);
-            return new ApiResponseList(name);
+            if (errors == null) {
+                // A null list indicates that an exception occurred while parsing the file...
+                throw new ApiException(ApiException.Type.BAD_EXTERNAL_DATA, PARAM_FILE);
+            }
+
+            ApiResponseList result = new ApiResponseList(name);
+            for (String error : errors) {
+                result.addItem(new ApiResponseElement("warning", error));
+            }
+
+            return result;
 
         } else if (ACTION_IMPORT_URL.equals(name)) {
+
             try {
                 String override = params.optString(PARAM_HOST_OVERRIDE, "");
                 List<String> errors;
@@ -107,8 +125,18 @@ public class OpenApiAPI extends ApiImplementor {
                             extension.importOpenApiDefinition(
                                     new URI(params.getString(PARAM_URL), false), override, false);
                 }
-                checkErrors(errors);
-                return new ApiResponseList(name);
+
+                if (errors == null) {
+                    throw new ApiException(
+                            ApiException.Type.ILLEGAL_PARAMETER, "Failed to access the target.");
+                }
+
+                ApiResponseList result = new ApiResponseList(name);
+                for (String error : errors) {
+                    result.addItem(new ApiResponseElement("warning", error));
+                }
+
+                return result;
             } catch (URIException e) {
                 throw new ApiException(ApiException.Type.ILLEGAL_PARAMETER, PARAM_URL);
             } catch (InvalidUrlException e) {

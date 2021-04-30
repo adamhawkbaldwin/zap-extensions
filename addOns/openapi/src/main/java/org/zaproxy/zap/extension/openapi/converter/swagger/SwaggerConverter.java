@@ -319,13 +319,13 @@ public class SwaggerConverter implements Converter {
             message +=
                     "\n"
                             + Constant.messages.getString(
-                                    BASE_KEY_I18N + "serverurl", serverUriBuilder);
+                            BASE_KEY_I18N + "serverurl", serverUriBuilder);
         }
         if (!definitionUriBuilder.isEmpty()) {
             message +=
                     "\n"
                             + Constant.messages.getString(
-                                    BASE_KEY_I18N + "definitionurl", definitionUriBuilder);
+                            BASE_KEY_I18N + "definitionurl", definitionUriBuilder);
         }
         return message;
     }
