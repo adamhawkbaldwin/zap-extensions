@@ -19,6 +19,9 @@
  */
 package org.zaproxy.zap.extension.openapi;
 
+import io.swagger.util.Json;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -165,10 +168,6 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
         return menuImportUrlOpenApi;
     }
 
-    public void importOpenApiDefinition(final URI uri) {
-        this.importOpenApiDefinition(uri, null, false);
-    }
-
     /**
      * Imports the API definition from a URI.
      *
@@ -253,15 +252,22 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
             OpenApiResults results = new OpenApiResults();
             Requestor requestor = new Requestor(HttpSender.MANUAL_REQUEST_INITIATOR);
             requestor.addListener(new HistoryPersister(results));
-            results.setErrors(
-                    importOpenApiDefinition(
-                            FileUtils.readFileToString(file, "UTF-8"),
-                            targetUrl,
-                            null,
-                            initViaUi,
-                            requestor));
+
+            if (!file.exists()) {
+                throw new IOException(file.getAbsolutePath() + " does not exist.");
+            }
+
+            SwaggerParseResult swaggerParseResult = SwaggerConverter.parse(file);
+            OpenAPI openApi = swaggerParseResult.getOpenAPI();
+
+            if (openApi == null) {
+                results.setErrors(swaggerParseResult.getMessages());
+            } else {
+                importOpenApiDefinition(
+                        Json.pretty(openApi), targetUrl, null, initViaUi, requestor);
+            }
             return results;
-        } catch (IOException e) {
+        } catch (Exception e) {
             if (initViaUi) {
                 View.getSingleton()
                         .showWarningDialog(Constant.messages.getString("openapi.io.error"));
@@ -343,7 +349,7 @@ public class ExtensionOpenApi extends ExtensionAdaptor implements CommandLineLis
             }
             return errors;
         }
-        return null;
+        return errors.isEmpty() ? null : errors;
     }
 
     private ValueGenerator getValueGenerator() {
