@@ -31,6 +31,7 @@ import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.servers.Server;
 import io.swagger.v3.oas.models.servers.ServerVariable;
 import io.swagger.v3.parser.OpenAPIV3Parser;
+import io.swagger.v3.parser.core.extensions.SwaggerParserExtension;
 import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import java.io.BufferedWriter;
@@ -63,7 +64,7 @@ public class SwaggerConverter implements Converter {
     private OperationHelper operationHelper;
     private RequestModelConverter requestConverter;
     private Generators generators;
-    private List<String> errors = new ArrayList<>();
+    private List<String> errors = new ArrayList<String>();
 
     public SwaggerConverter(String defn, ValueGenerator valGen) {
         this(null, null, defn, valGen);
@@ -341,10 +342,13 @@ public class SwaggerConverter implements Converter {
             try {
                 UriBuilder uriBuilder = UriBuilder.parse(url);
                 if (!hasSupportedScheme(uriBuilder)) {
-                    LOG.debug(
-                            "Ignoring server URL {} because of unsupported scheme: {}",
-                            url,
-                            uriBuilder.getScheme());
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug(
+                                "Ignoring server URL "
+                                        + url
+                                        + " because of unsupported scheme: "
+                                        + uriBuilder.getScheme());
+                    }
                     continue;
                 }
                 if (!uriBuilder.isEmpty()) {
@@ -380,5 +384,34 @@ public class SwaggerConverter implements Converter {
             operations.addAll(
                     operationHelper.getAllOperations(entry.getValue(), url + entry.getKey()));
         }
+    }
+
+    /**
+     * File based parser for v2 and v3 specs that bundles external file refs.
+     *
+     * @param file V2 or V3 OpenAPI File spec, supporting external files via ref
+     * @return Populated either with a valid OpenAPI or a list of errors
+     */
+    public static SwaggerParseResult parse(File file) {
+        ParseOptions parseOptions = new ParseOptions();
+        parseOptions.setResolve(true);
+        parseOptions.setResolveFully(true);
+
+        List<String> errors = new ArrayList<>();
+        for (SwaggerParserExtension ex : OpenAPIV3Parser.getExtensions()) {
+            errors.clear();
+            SwaggerParseResult swaggerParseResult =
+                    ex.readLocation(file.getAbsolutePath(), null, parseOptions);
+            OpenAPI openAPI = swaggerParseResult.getOpenAPI();
+            if (openAPI != null) {
+                return swaggerParseResult;
+            } else {
+                errors.addAll(swaggerParseResult.getMessages());
+            }
+        }
+
+        SwaggerParseResult swaggerParseResult = new SwaggerParseResult();
+        swaggerParseResult.setMessages(errors);
+        return swaggerParseResult;
     }
 }

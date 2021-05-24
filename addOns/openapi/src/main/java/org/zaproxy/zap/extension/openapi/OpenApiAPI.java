@@ -28,7 +28,6 @@ import org.zaproxy.zap.extension.api.ApiAction;
 import org.zaproxy.zap.extension.api.ApiException;
 import org.zaproxy.zap.extension.api.ApiImplementor;
 import org.zaproxy.zap.extension.api.ApiResponse;
-import org.zaproxy.zap.extension.api.ApiResponseElement;
 import org.zaproxy.zap.extension.api.ApiResponseList;
 import org.zaproxy.zap.extension.openapi.converter.swagger.InvalidUrlException;
 
@@ -71,14 +70,7 @@ public class OpenApiAPI extends ApiImplementor {
     @Override
     public ApiResponse handleApiAction(String name, JSONObject params) throws ApiException {
         if (ACTION_IMPORT_FILE.equals(name)) {
-            File file = new File(params.getString(PARAM_FILE));
-            if (!file.exists() || !file.canRead()) {
-                throw new ApiException(ApiException.Type.DOES_NOT_EXIST, file.getAbsolutePath());
-            }
-
-            if (!file.isFile()) {
-                throw new ApiException(ApiException.Type.ILLEGAL_PARAMETER, PARAM_FILE);
-            }
+            File file = handleFile(params);
             List<String> errors;
             String target = params.optString(PARAM_TARGET, "");
             try {
@@ -87,20 +79,10 @@ public class OpenApiAPI extends ApiImplementor {
                 throw new ApiException(ApiException.Type.ILLEGAL_PARAMETER, PARAM_TARGET);
             }
 
-            if (errors == null) {
-                // A null list indicates that an exception occurred while parsing the file...
-                throw new ApiException(ApiException.Type.BAD_EXTERNAL_DATA, PARAM_FILE);
-            }
-
-            ApiResponseList result = new ApiResponseList(name);
-            for (String error : errors) {
-                result.addItem(new ApiResponseElement("warning", error));
-            }
-
-            return result;
+            checkErrors(errors);
+            return new ApiResponseList(name);
 
         } else if (ACTION_IMPORT_URL.equals(name)) {
-
             try {
                 String override = params.optString(PARAM_HOST_OVERRIDE, "");
 
@@ -108,17 +90,8 @@ public class OpenApiAPI extends ApiImplementor {
                         extension.importOpenApiDefinition(
                                 new URI(params.getString(PARAM_URL), false), override, false);
 
-                if (errors == null) {
-                    throw new ApiException(
-                            ApiException.Type.ILLEGAL_PARAMETER, "Failed to access the target.");
-                }
-
-                ApiResponseList result = new ApiResponseList(name);
-                for (String error : errors) {
-                    result.addItem(new ApiResponseElement("warning", error));
-                }
-
-                return result;
+                checkErrors(errors);
+                return new ApiResponseList(name);
             } catch (URIException e) {
                 throw new ApiException(ApiException.Type.ILLEGAL_PARAMETER, PARAM_URL);
             } catch (InvalidUrlException e) {
@@ -127,6 +100,27 @@ public class OpenApiAPI extends ApiImplementor {
 
         } else {
             throw new ApiException(ApiException.Type.BAD_ACTION);
+        }
+    }
+
+    private File handleFile(JSONObject params) throws ApiException {
+        File file = new File(params.getString(PARAM_FILE));
+        if (!file.exists() || !file.canRead()) {
+            throw new ApiException(ApiException.Type.DOES_NOT_EXIST, file.getAbsolutePath());
+        }
+
+        if (!file.isFile()) {
+            throw new ApiException(
+                    ApiException.Type.ILLEGAL_PARAMETER,
+                    "Not a regular file " + file.getAbsolutePath());
+        }
+        return file;
+    }
+
+    private void checkErrors(List<String> errors) throws ApiException {
+        if (errors != null && !errors.isEmpty()) {
+            String msg = String.join(";", errors);
+            throw new ApiException(ApiException.Type.ILLEGAL_PARAMETER, msg);
         }
     }
 }
